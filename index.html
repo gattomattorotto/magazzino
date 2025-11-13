@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestore Magazzino</title>
+
+    <!-- Manifest per PWA -->
+    <link rel="manifest" href="manifest.json">
+    <!-- Icona per dispositivi Apple -->
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        input, button, div {
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+        }
+        #result {
+            font-size: 24px;
+            color: green;
+            font-weight: bold;
+        }
+        #scanner {
+            width: 100%;
+            max-width: 600px;
+            margin: 10px 0;
+        }
+        #preview {
+            width: 100%;
+            height: 300px;
+            background: #000;
+            object-fit: contain;
+        }
+        #startScanner, #stopScanner {
+            display: inline-block;
+            margin: 5px;
+            padding: 10px 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Gestore Magazzino</h1>
+
+    <input type="file" id="csvFile" accept=".csv">
+    <button onclick="loadCSV()">Carica CSV</button>
+
+    <input type="text" id="barcodeInput" placeholder="Inserisci codice a barre">
+    <button onclick="searchPrice()">Cerca Prezzo</button>
+
+    <button id="startScanner" onclick="startScanner()">Avvia Scanner</button>
+    <button id="stopScanner" onclick="stopScanner()" style="display:none;">Ferma Scanner</button>
+
+    <div id="scanner" style="display:none;">
+        <video id="preview"></video>
+    </div>
+
+    <div id="result">Prezzo apparirà qui...</div>
+
+    <!-- Libreria per lettura codice a barre -->
+    <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+
+    <script>
+        let products = {};
+
+        function loadCSV() {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.split('\n');
+                lines.shift(); // rimuove l'header
+
+                products = {};
+                lines.forEach(line => {
+                    if (line.trim()) {
+                        const [barcode, price] = line.split(',');
+                        products[barcode.trim()] = parseFloat(price.trim()).toFixed(2);
+                    }
+                });
+
+                alert("CSV caricato con " + Object.keys(products).length + " prodotti.");
+            };
+            reader.readAsText(file);
+        }
+
+        function searchPrice() {
+            const barcode = document.getElementById('barcodeInput').value.trim();
+            const resultDiv = document.getElementById('result');
+
+            if (products[barcode]) {
+                resultDiv.textContent = 'Prezzo: € ' + products[barcode];
+            } else {
+                resultDiv.textContent = 'Prodotto non trovato.';
+            }
+        }
+
+        let isScannerActive = false;
+
+        function startScanner() {
+            document.getElementById('scanner').style.display = 'block';
+            document.getElementById('startScanner').style.display = 'none';
+            document.getElementById('stopScanner').style.display = 'inline-block';
+
+            Quagga.init({
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: document.querySelector('#preview')
+                },
+                decoder: {
+                    readers: ["ean_reader", "ean_8_reader", "code_128_reader"]
+                }
+            }, function(err) {
+                if (err) {
+                    console.error("Errore inizializzazione scanner:", err);
+                    return;
+                }
+                Quagga.start();
+            });
+
+            Quagga.onDetected(function(data) {
+                const barcode = data.codeResult.code;
+                document.getElementById('barcodeInput').value = barcode;
+                searchPrice();
+                setTimeout(stopScanner, 500);
+            });
+
+            isScannerActive = true;
+        }
+
+        function stopScanner() {
+            if (isScannerActive) {
+                Quagga.stop();
+                isScannerActive = false;
+            }
+            document.getElementById('scanner').style.display = 'none';
+            document.getElementById('startScanner').style.display = 'inline-block';
+            document.getElementById('stopScanner').style.display = 'none';
+        }
+
+        // Registrazione del Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('Service Worker registrato:', reg))
+                    .catch(err => console.log('Registrazione SW fallita:', err));
+            });
+        }
+    </script>
+
+</body>
+</html>
